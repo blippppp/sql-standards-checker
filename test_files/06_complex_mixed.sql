@@ -138,7 +138,7 @@ WHERE
 --   );
 --
 --   IF v_order_total IS NULL THEN
---     RAISE USING MESSAGE = FORMAT('Order %t not found', p_order_id);
+--     RAISE USING MESSAGE = FORMAT('Order %d not found', p_order_id);
 --   END IF;
 --
 --   -- [ISSUE] No validation that refund amount is within bounds
