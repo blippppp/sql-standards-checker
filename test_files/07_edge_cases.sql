@@ -104,10 +104,10 @@ $$ LANGUAGE plpgsql;
 
 -- [ISSUE] Unsafe dynamic table name (no quoting)
 CREATE OR REPLACE FUNCTION get_table_data_unsafe(p_table TEXT)
-RETURNS VOID AS $$
+RETURNS SETOF RECORD AS $$
 BEGIN
     -- [SEC] DANGER: p_table is concatenated without quoting
-    EXECUTE 'SELECT * FROM ' || p_table;
+    RETURN QUERY EXECUTE 'SELECT * FROM ' || p_table;
 END;
 $$ LANGUAGE plpgsql;
 
