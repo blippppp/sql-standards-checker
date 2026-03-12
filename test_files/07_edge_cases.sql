@@ -181,8 +181,8 @@ SELECT
     product_id,
     product_name,
     ts_rank(search_vector, query) AS relevance
-FROM products,
-     to_tsquery('english', 'wireless & headphones') AS query
+FROM products
+CROSS JOIN to_tsquery('english', 'wireless & headphones') AS query
 WHERE search_vector @@ query
 ORDER BY relevance DESC
 LIMIT 20;
