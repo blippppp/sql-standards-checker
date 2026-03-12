@@ -3,7 +3,7 @@
 -- Purpose: Demonstrates common SQL naming convention violations.
 -- Each issue is labelled with a [NAME] comment explaining the problem.
 -- Convention target: lowercase snake_case for all identifiers.
--- Database: PostgreSQL (compatible with minor modifications for MySQL/SQL Server)
+-- Database: Google BigQuery Standard SQL
 -- Scenario: E-commerce / business application queries
 -- =============================================================================
 
@@ -15,13 +15,13 @@
 
 -- [NAME] camelCase column names — inconsistent with the rest of the schema
 CREATE TABLE UserProfiles (          -- [NAME] PascalCase table name
-    userId          SERIAL PRIMARY KEY,  -- [NAME] camelCase
-    firstName       VARCHAR(100),        -- [NAME] camelCase
-    lastName        VARCHAR(100),        -- [NAME] camelCase
-    emailAddress    VARCHAR(255),        -- [NAME] camelCase
+    userId          INT64 NOT NULL,      -- [NAME] camelCase
+    firstName       STRING(100),         -- [NAME] camelCase
+    lastName        STRING(100),         -- [NAME] camelCase
+    emailAddress    STRING(255),         -- [NAME] camelCase
     dateOfBirth     DATE,                -- [NAME] camelCase
-    createdAt       TIMESTAMPTZ,         -- [NAME] camelCase
-    isActive        BOOLEAN              -- [NAME] camelCase
+    createdAt       TIMESTAMP,           -- [NAME] camelCase
+    isActive        BOOL                 -- [NAME] camelCase
 );
 
 -- [NAME] Mixed casing within a single query
@@ -41,19 +41,19 @@ JOIN Orders o             -- [NAME] PascalCase table
 -- -----------------------------------------------------------------------------
 
 -- [NAME] 'order', 'user', 'table', 'select', 'group' are reserved keywords
-CREATE TABLE "order" (         -- [NAME] reserved word as table name
-    "select"   INT,            -- [NAME] reserved word as column name
-    "table"    VARCHAR(50),    -- [NAME] reserved word as column name
-    "group"    VARCHAR(50),    -- [NAME] reserved word as column name
-    "from"     VARCHAR(100),   -- [NAME] reserved word as column name
-    "where"    NUMERIC(10,2),  -- [NAME] reserved word as column name
-    "index"    INT             -- [NAME] reserved word as column name
+CREATE TABLE `order` (         -- [NAME] reserved word as table name
+    `select`   INT64,          -- [NAME] reserved word as column name
+    `table`    STRING(50),     -- [NAME] reserved word as column name
+    `group`    STRING(50),     -- [NAME] reserved word as column name
+    `from`     STRING(100),    -- [NAME] reserved word as column name
+    `where`    NUMERIC(10,2),  -- [NAME] reserved word as column name
+    `index`    INT64           -- [NAME] reserved word as column name
 );
 
 -- [NAME] Querying the table requires quoting everywhere — error-prone
-SELECT "select", "from", "where"
-FROM "order"
-WHERE "group" = 'retail';
+SELECT `select`, `from`, `where`
+FROM `order`
+WHERE `group` = 'retail';
 
 -- -----------------------------------------------------------------------------
 -- Naming Violation 3: Non-descriptive names (single letters, numbered suffixes)
@@ -70,24 +70,22 @@ WHERE t1.z = 1;
 
 -- [NAME] Numbered column names
 CREATE TABLE temp_data (
-    col1  VARCHAR(255),   -- [NAME] what is col1?
-    col2  INTEGER,        -- [NAME] what is col2?
+    col1  STRING(255),    -- [NAME] what is col1?
+    col2  INT64,          -- [NAME] what is col2?
     col3  NUMERIC(10,2),  -- [NAME] what is col3?
     col4  DATE,           -- [NAME] what is col4?
-    col5  BOOLEAN         -- [NAME] what is col5?
+    col5  BOOL            -- [NAME] what is col5?
 );
 
--- [NAME] Single-letter variable names in stored procedure
-CREATE OR REPLACE FUNCTION f(a INT, b DATE, c DATE)
-RETURNS TABLE(x INT, y NUMERIC) AS $$   -- [NAME] cryptic parameter and return names
-BEGIN
-    RETURN QUERY
-    SELECT p, q
-    FROM t
-    WHERE r = a
-      AND s BETWEEN b AND c;
-END;
-$$ LANGUAGE plpgsql;
+-- [NAME] Single-letter variable names in UDF (BigQuery)
+-- CREATE TEMP FUNCTION f(a INT64, b DATE, c DATE)
+-- RETURNS ARRAY<STRUCT<x INT64, y NUMERIC>>   -- [NAME] cryptic parameter and return names
+-- AS (
+--   (SELECT ARRAY_AGG(STRUCT(p AS x, q AS y))
+--    FROM t
+--    WHERE r = a
+--      AND s BETWEEN b AND c)
+-- );
 
 -- -----------------------------------------------------------------------------
 -- Naming Violation 4: Overly long / verbose names
@@ -96,11 +94,11 @@ $$ LANGUAGE plpgsql;
 -- -----------------------------------------------------------------------------
 
 CREATE TABLE customer_personal_information_and_billing_details (   -- [NAME] way too long
-    the_unique_customer_identifier_for_internal_use   BIGSERIAL PRIMARY KEY,  -- [NAME] verbose
-    the_customers_first_given_name                    VARCHAR(100),           -- [NAME] verbose
-    the_customers_last_family_surname_name            VARCHAR(100),           -- [NAME] verbose
-    customer_full_mailing_and_shipping_street_address VARCHAR(500),           -- [NAME] verbose
-    the_date_and_time_when_the_customer_was_created   TIMESTAMPTZ             -- [NAME] verbose
+    the_unique_customer_identifier_for_internal_use   INT64 NOT NULL,         -- [NAME] verbose
+    the_customers_first_given_name                    STRING(100),            -- [NAME] verbose
+    the_customers_last_family_surname_name            STRING(100),            -- [NAME] verbose
+    customer_full_mailing_and_shipping_street_address STRING(500),            -- [NAME] verbose
+    the_date_and_time_when_the_customer_was_created   TIMESTAMP               -- [NAME] verbose
 );
 
 -- [NAME] Overly verbose index name
@@ -114,17 +112,17 @@ CREATE TABLE customer_personal_information_and_billing_details (   -- [NAME] way
 -- -----------------------------------------------------------------------------
 
 -- [NAME] Quoted identifiers with spaces — must quote everywhere
-CREATE TABLE "customer orders" (          -- [NAME] space in table name
-    "order id"       SERIAL PRIMARY KEY,  -- [NAME] space in column name
-    "customer-id"    INTEGER,             -- [NAME] hyphen in column name
-    "order#amount"   NUMERIC(10,2),       -- [NAME] hash character
-    "order.date"     DATE,                -- [NAME] period in name
-    "total $"        NUMERIC(10,2)        -- [NAME] dollar sign
+CREATE TABLE `customer orders` (          -- [NAME] space in table name
+    `order id`       INT64 NOT NULL,      -- [NAME] space in column name
+    `customer-id`    INT64,                -- [NAME] hyphen in column name
+    `order#amount`   NUMERIC(10,2),        -- [NAME] hash character
+    `order.date`     DATE,                 -- [NAME] period in name
+    `total $`        NUMERIC(10,2)         -- [NAME] dollar sign
 );
 
-SELECT "order id", "total $"
-FROM "customer orders"
-WHERE "customer-id" = 42;
+SELECT `order id`, `total $`
+FROM `customer orders`
+WHERE `customer-id` = 42;
 
 -- -----------------------------------------------------------------------------
 -- Naming Violation 6: Ambiguous abbreviations
@@ -133,12 +131,12 @@ WHERE "customer-id" = 42;
 -- -----------------------------------------------------------------------------
 
 CREATE TABLE usr_mstr (            -- [NAME] unclear abbreviation
-    usr_id   SERIAL PRIMARY KEY,
-    usr_nm   VARCHAR(100),         -- [NAME] cryptic: usr_nm = user name?
-    usr_em   VARCHAR(255),         -- [NAME] cryptic: usr_em = user email?
+    usr_id   INT64 NOT NULL,
+    usr_nm   STRING(100),          -- [NAME] cryptic: usr_nm = user name?
+    usr_em   STRING(255),          -- [NAME] cryptic: usr_em = user email?
     usr_dob  DATE,                 -- [NAME] cryptic: usr_dob = date of birth?
-    usr_flg  BOOLEAN,              -- [NAME] cryptic: usr_flg = which flag?
-    usr_dt   TIMESTAMPTZ           -- [NAME] cryptic: usr_dt = which date?
+    usr_flg  BOOL,                 -- [NAME] cryptic: usr_flg = which flag?
+    usr_dt   TIMESTAMP             -- [NAME] cryptic: usr_dt = which date?
 );
 
 SELECT u.usr_nm, o.ord_dt, o.ord_amt
@@ -153,24 +151,24 @@ JOIN ord_hdr o ON u.usr_id = o.usr_id;   -- [NAME] ord_hdr? ord_dt? ord_amt?
 
 -- [NAME] Some tables singular, some plural — inconsistent
 CREATE TABLE customer (        -- singular
-    customer_id SERIAL PRIMARY KEY,
-    name        VARCHAR(200)
+    customer_id INT64 NOT NULL,
+    name        STRING(200)
 );
 
 CREATE TABLE orders (          -- [NAME] plural — inconsistent with 'customer'
-    order_id    SERIAL PRIMARY KEY,
-    customer_id INTEGER REFERENCES customer(customer_id)
+    order_id    INT64 NOT NULL,
+    customer_id INT64
 );
 
 CREATE TABLE product (         -- singular
-    product_id SERIAL PRIMARY KEY,
-    name       VARCHAR(200)
+    product_id INT64 NOT NULL,
+    name       STRING(200)
 );
 
 CREATE TABLE order_items (     -- [NAME] plural — inconsistent with 'product'
-    item_id    SERIAL PRIMARY KEY,
-    order_id   INTEGER REFERENCES orders(order_id),
-    product_id INTEGER REFERENCES product(product_id)
+    item_id    INT64 NOT NULL,
+    order_id   INT64,
+    product_id INT64
 );
 
 -- -----------------------------------------------------------------------------
@@ -180,10 +178,10 @@ CREATE TABLE order_items (     -- [NAME] plural — inconsistent with 'product'
 -- -----------------------------------------------------------------------------
 
 CREATE TABLE customers_tbl (         -- [NAME] _tbl suffix redundant
-    customer_id_int  SERIAL PRIMARY KEY,  -- [NAME] _int type suffix
-    name_str         VARCHAR(200),        -- [NAME] _str type suffix
-    age_int          INTEGER,             -- [NAME] _int type suffix
-    is_active_bool   BOOLEAN              -- [NAME] _bool type suffix
+    customer_id_int  INT64 NOT NULL,     -- [NAME] _int type suffix
+    name_str         STRING(200),        -- [NAME] _str type suffix
+    age_int          INT64,               -- [NAME] _int type suffix
+    is_active_bool   BOOL                 -- [NAME] _bool type suffix
 );
 
 -- [NAME] View with _vw prefix

@@ -3,7 +3,7 @@
 -- Purpose: Advanced scenarios and edge cases that stress-test the SQL
 --          Standards Checker, including dynamic SQL, recursive CTEs,
 --          MERGE statements, temp tables, JSON, full-text search, and more.
--- Database: PostgreSQL (compatible with minor modifications for MySQL/SQL Server)
+-- Database: Google BigQuery Standard SQL
 -- Scenario: E-commerce / business application
 -- =============================================================================
 
@@ -19,7 +19,7 @@ WITH RECURSIVE category_tree AS (
         category_name,
         parent_category_id,
         0         AS depth,
-        category_name::TEXT AS path
+        CAST(category_name AS STRING) AS path
     FROM categories
     WHERE parent_category_id IS NULL
 
@@ -31,7 +31,7 @@ WITH RECURSIVE category_tree AS (
         c.category_name,
         c.parent_category_id,
         ct.depth + 1,
-        ct.path || ' > ' || c.category_name
+        CONCAT(ct.path, ' > ', c.category_name)
     FROM categories AS c
     INNER JOIN category_tree AS ct ON c.parent_category_id = ct.category_id
     WHERE ct.depth < 10   -- termination guard to prevent infinite loops on cycles
@@ -63,53 +63,37 @@ SELECT * FROM unsafe_tree;
 -- Edge Case 2: MERGE statement (UPSERT pattern)
 -- -----------------------------------------------------------------------------
 
--- PostgreSQL UPSERT using INSERT ... ON CONFLICT
-INSERT INTO inventory (product_id, warehouse_id, quantity_on_hand, updated_at)
-VALUES (:product_id, :warehouse_id, :quantity, NOW())
-ON CONFLICT (product_id, warehouse_id)
-DO UPDATE SET
-    quantity_on_hand = EXCLUDED.quantity_on_hand,
-    updated_at       = EXCLUDED.updated_at;
-
--- [EDGE] SQL Server-style MERGE (syntax reference — not valid PostgreSQL)
--- MERGE INTO inventory AS target
--- USING (SELECT :product_id AS product_id,
---               :warehouse_id AS warehouse_id,
---               :quantity AS qty) AS source
---     ON target.product_id = source.product_id
---    AND target.warehouse_id = source.warehouse_id
--- WHEN MATCHED THEN
---     UPDATE SET quantity_on_hand = source.qty, updated_at = NOW()
--- WHEN NOT MATCHED THEN
---     INSERT (product_id, warehouse_id, quantity_on_hand, updated_at)
---     VALUES (source.product_id, source.warehouse_id, source.qty, NOW());
+-- BigQuery MERGE statement (Standard SQL DML)
+MERGE INTO inventory AS target
+USING (SELECT @product_id AS product_id,
+              @warehouse_id AS warehouse_id,
+              @quantity AS quantity_on_hand) AS source
+    ON target.product_id = source.product_id
+   AND target.warehouse_id = source.warehouse_id
+WHEN MATCHED THEN
+    UPDATE SET quantity_on_hand = source.quantity_on_hand,
+               updated_at = CURRENT_TIMESTAMP()
+WHEN NOT MATCHED THEN
+    INSERT (product_id, warehouse_id, quantity_on_hand, updated_at)
+    VALUES (source.product_id, source.warehouse_id, source.quantity_on_hand, CURRENT_TIMESTAMP());
 
 -- -----------------------------------------------------------------------------
 -- Edge Case 3: Dynamic SQL generation with parameterised identifiers
--- [EDGE] Using format() with %I for safe identifier quoting in PL/pgSQL
+-- [EDGE] BigQuery uses EXECUTE IMMEDIATE for dynamic SQL
 -- -----------------------------------------------------------------------------
 
-CREATE OR REPLACE FUNCTION get_table_row_count(p_schema TEXT, p_table TEXT)
-RETURNS BIGINT AS $$
-DECLARE
-    v_count BIGINT;
-    v_sql   TEXT;
-BEGIN
-    -- [GOOD] Uses format() with %I to safely quote identifiers
-    v_sql := format('SELECT COUNT(*) FROM %I.%I', p_schema, p_table);
-    EXECUTE v_sql INTO v_count;
-    RETURN v_count;
-END;
-$$ LANGUAGE plpgsql;
+-- [GOOD] Dynamic SQL with safe identifier quoting (stored procedure)
+-- CREATE OR REPLACE PROCEDURE get_table_row_count(p_dataset STRING, p_table STRING, OUT v_count INT64)
+-- BEGIN
+--   EXECUTE IMMEDIATE FORMAT('SELECT COUNT(*) FROM `%s.%s`', p_dataset, p_table) INTO v_count;
+-- END;
 
--- [ISSUE] Unsafe dynamic table name (no quoting)
-CREATE OR REPLACE FUNCTION get_table_data_unsafe(p_table TEXT)
-RETURNS SETOF RECORD AS $$
-BEGIN
-    -- [SEC] DANGER: p_table is concatenated without quoting
-    RETURN QUERY EXECUTE 'SELECT * FROM ' || p_table;
-END;
-$$ LANGUAGE plpgsql;
+-- [ISSUE] Unsafe dynamic table name (no quoting or validation)
+-- CREATE OR REPLACE PROCEDURE get_table_data_unsafe(p_table STRING)
+-- BEGIN
+--   -- [SEC] DANGER: p_table is concatenated without proper validation
+--   EXECUTE IMMEDIATE CONCAT('SELECT * FROM ', p_table);
+-- END;
 
 -- -----------------------------------------------------------------------------
 -- Edge Case 4: Temporary tables
@@ -125,7 +109,7 @@ WHERE status = 'completed'
 GROUP BY customer_id
 HAVING SUM(total_amount) > 1000;
 
-CREATE INDEX idx_tmp_hvc_customer_id ON tmp_high_value_customers(customer_id);
+-- BigQuery temp tables don't support explicit indexes (clustering available on permanent tables)
 
 -- Use the temp table in subsequent queries
 SELECT
@@ -138,24 +122,21 @@ ORDER BY t.lifetime_value DESC;
 
 DROP TABLE IF EXISTS tmp_high_value_customers;   -- cleanup
 
--- [EDGE] Global temp table — persists across sessions (SQL Server syntax)
--- CREATE TABLE ##global_temp_orders (
---     order_id INT,
---     total    NUMERIC(10,2)
--- );
+-- [EDGE] BigQuery temp tables exist only for the session/script duration
+-- No global temp table concept in BigQuery
 
 -- -----------------------------------------------------------------------------
--- Edge Case 5: JSON / JSONB handling (PostgreSQL)
+-- Edge Case 5: JSON handling (BigQuery)
 -- -----------------------------------------------------------------------------
 
--- [GOOD] Querying a JSONB column with an index-compatible operator
+-- [GOOD] Querying a JSON column with extraction functions
 SELECT
     order_id,
-    metadata->>'source_channel'      AS acquisition_channel,
-    (metadata->>'item_count')::INT   AS item_count
+    JSON_EXTRACT_SCALAR(metadata, '$.source_channel') AS acquisition_channel,
+    CAST(JSON_EXTRACT_SCALAR(metadata, '$.item_count') AS INT64) AS item_count
 FROM orders
 WHERE
-    metadata @> '{"source_channel": "mobile_app"}'::JSONB  -- uses GIN index
+    JSON_EXTRACT_SCALAR(metadata, '$.source_channel') = 'mobile_app'
     AND status = 'completed'
 ORDER BY order_id DESC
 LIMIT 100;
@@ -163,49 +144,48 @@ LIMIT 100;
 -- [ISSUE] JSON extraction in WHERE without a supporting index
 SELECT order_id
 FROM orders
-WHERE metadata->>'promo_code' = 'SAVE20';   -- [ISSUE] ->>'promo_code' likely not indexed
+WHERE JSON_EXTRACT_SCALAR(metadata, '$.promo_code') = 'SAVE20';   -- [ISSUE] extraction likely not indexed
 
 -- [EDGE] Aggregating a nested JSON array
 SELECT
     order_id,
-    jsonb_array_length(metadata->'tags') AS tag_count
+    ARRAY_LENGTH(JSON_EXTRACT_ARRAY(metadata, '$.tags')) AS tag_count
 FROM orders
-WHERE jsonb_typeof(metadata->'tags') = 'array';
+WHERE JSON_TYPE(JSON_EXTRACT(metadata, '$.tags')) = 'array';
 
 -- -----------------------------------------------------------------------------
 -- Edge Case 6: Full-text search
 -- -----------------------------------------------------------------------------
 
--- [GOOD] Full-text search with tsvector/tsquery and a functional index
+-- [GOOD] Full-text search using SEARCH function (BigQuery's native full-text capability)
+-- BigQuery uses SEARCH index on STRING columns
 SELECT
     product_id,
-    product_name,
-    ts_rank(search_vector, query) AS relevance
+    product_name
 FROM products
-CROSS JOIN to_tsquery('english', 'wireless & headphones') AS query
-WHERE search_vector @@ query
-ORDER BY relevance DESC
+WHERE SEARCH(product_name, 'wireless headphones')
+ORDER BY product_id
 LIMIT 20;
 
--- [ISSUE] ILIKE used as a full-text search substitute — poor performance
+-- [ISSUE] LIKE used as a full-text search substitute — poor performance
 SELECT product_id, product_name
 FROM products
-WHERE product_name ILIKE '%wireless%'    -- [ISSUE] no index, full scan
-   OR description  ILIKE '%wireless%';   -- [ISSUE] same problem on description
+WHERE product_name LIKE '%wireless%'     -- [ISSUE] no index, full scan
+   OR description  LIKE '%wireless%';    -- [ISSUE] same problem on description
 
 -- -----------------------------------------------------------------------------
--- Edge Case 7: Cross-database / cross-schema queries
+-- Edge Case 7: Cross-database / cross-dataset queries
 -- -----------------------------------------------------------------------------
 
--- [EDGE] Cross-schema query (PostgreSQL schema-qualified names)
+-- [EDGE] Cross-dataset query (BigQuery project.dataset.table notation)
 SELECT
     a.order_id,
     b.customer_name,
     c.warehouse_name
-FROM sales.orders          AS a
-JOIN crm.customers         AS b ON a.customer_id = b.customer_id
-JOIN logistics.warehouses  AS c ON a.warehouse_id = c.warehouse_id
-WHERE a.order_date >= CURRENT_DATE - INTERVAL '30 days';
+FROM `project.sales.orders`          AS a
+JOIN `project.crm.customers`         AS b ON a.customer_id = b.customer_id
+JOIN `project.logistics.warehouses`  AS c ON a.warehouse_id = c.warehouse_id
+WHERE a.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY);
 
 -- -----------------------------------------------------------------------------
 -- Edge Case 8: Very long query with many conditions (readability edge case)
@@ -245,9 +225,9 @@ LEFT  JOIN shipments       AS s  ON o.order_id         = s.order_id
 INNER JOIN order_items     AS oi ON o.order_id         = oi.order_id
 WHERE
     o.status           IN ('processing', 'shipped', 'delivered')
-    AND o.order_date   BETWEEN :start_date AND :end_date
-    AND c.country_code  = :country_code
-    AND o.total_amount >= :min_order_value
+    AND o.order_date   BETWEEN @start_date AND @end_date
+    AND c.country_code  = @country_code
+    AND o.total_amount >= @min_order_value
 GROUP BY
     o.order_id, o.order_date, o.total_amount, o.discount_amount,
     o.tax_amount, o.shipping_amount, o.status, o.payment_status,
@@ -260,38 +240,40 @@ ORDER BY o.order_date DESC, o.order_id DESC
 LIMIT 500;
 
 -- -----------------------------------------------------------------------------
--- Edge Case 9: LATERAL join (PostgreSQL)
+-- Edge Case 9: Correlated subquery / window function (LATERAL alternative)
 -- -----------------------------------------------------------------------------
 
--- [GOOD] LATERAL join to get the N most recent orders per customer
+-- [GOOD] BigQuery doesn't support LATERAL joins; use window functions or ARRAY_AGG
 SELECT
     c.customer_id,
     c.email,
-    recent.order_id,
-    recent.order_date,
-    recent.total_amount
+    o.order_id,
+    o.order_date,
+    o.total_amount
 FROM customers AS c
-CROSS JOIN LATERAL (
-    SELECT order_id, order_date, total_amount
-    FROM orders
-    WHERE customer_id = c.customer_id
-    ORDER BY order_date DESC
-    LIMIT 3
-) AS recent
+CROSS JOIN UNNEST(
+    ARRAY(
+        SELECT AS STRUCT order_id, order_date, total_amount
+        FROM orders
+        WHERE customer_id = c.customer_id
+        ORDER BY order_date DESC
+        LIMIT 3
+    )
+) AS o
 WHERE c.is_active = TRUE
-ORDER BY c.customer_id, recent.order_date DESC;
+ORDER BY c.customer_id, o.order_date DESC;
 
 -- -----------------------------------------------------------------------------
 -- Edge Case 10: Partitioned table query
 -- -----------------------------------------------------------------------------
 
--- [EDGE] Query against a range-partitioned table (PostgreSQL 10+)
--- Partition pruning works when you filter on the partition key (order_date).
+-- [EDGE] Query against a date-partitioned table (BigQuery native partitioning)
+-- Partition pruning works when you filter on the partition column (order_date).
 SELECT
     order_id,
     customer_id,
     total_amount
-FROM orders_partitioned   -- partitioned by RANGE(order_date)
+FROM orders_partitioned   -- partitioned by DATE(order_date)
 WHERE
     order_date >= '2024-01-01'
     AND order_date <  '2024-04-01'   -- [GOOD] range filter enables partition pruning

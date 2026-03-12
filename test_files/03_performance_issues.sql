@@ -2,7 +2,7 @@
 -- File: 03_performance_issues.sql
 -- Purpose: Demonstrates common SQL performance problems.
 -- Each issue is labelled with a [PERF] comment explaining the bottleneck.
--- Database: PostgreSQL (compatible with minor modifications for MySQL/SQL Server)
+-- Database: Google BigQuery Standard SQL
 -- Scenario: E-commerce / business application queries
 -- =============================================================================
 
@@ -86,7 +86,7 @@ LIMIT 20 OFFSET 99980;
 -- Better: keyset / cursor pagination
 -- SELECT order_id, order_date, total_amount
 -- FROM orders
--- WHERE order_id > :last_seen_order_id
+-- WHERE order_id > @last_seen_order_id
 -- ORDER BY order_id
 -- LIMIT 20;
 
@@ -119,7 +119,7 @@ SELECT order_id, total_amount FROM orders WHERE order_id = 1002;
 SELECT order_id, total_amount FROM orders WHERE order_id = 1003;
 SELECT order_id, total_amount FROM orders WHERE order_id = 1004;
 SELECT order_id, total_amount FROM orders WHERE order_id = 1005;
--- Fix: SELECT order_id, total_amount FROM orders WHERE order_id IN (1001,1002,1003,1004,1005);
+-- Fix: SELECT order_id, total_amount FROM orders WHERE order_id IN (1001, 1002, 1003, 1004, 1005);
 
 -- -----------------------------------------------------------------------------
 -- Performance Issue 8: Aggregation without filtering first
@@ -198,5 +198,5 @@ WHERE status = 'completed';
 -- -----------------------------------------------------------------------------
 SELECT order_id, customer_id, total_amount
 FROM orders
-WHERE customer_id = :cust_id
-   OR shipping_address_id = :addr_id;   -- [PERF] OR across two columns — possible full scan
+WHERE customer_id = @cust_id
+   OR shipping_address_id = @addr_id;   -- [PERF] OR across two columns — possible full scan

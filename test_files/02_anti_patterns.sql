@@ -2,7 +2,7 @@
 -- File: 02_anti_patterns.sql
 -- Purpose: Demonstrates common SQL anti-patterns and bad practices.
 -- Each issue is labelled with an [ISSUE] comment explaining the problem.
--- Database: PostgreSQL (compatible with minor modifications for MySQL/SQL Server)
+-- Database: Google BigQuery Standard SQL
 -- Scenario: E-commerce / business application queries
 -- =============================================================================
 
@@ -108,30 +108,20 @@ WHERE status = 'pending'
 --         Most cursor logic can and should be replaced with set-based operations.
 -- -----------------------------------------------------------------------------
 -- [ISSUE] Cursor to update discount per customer — should be a single UPDATE
-DO $$
-DECLARE
-    v_customer_id  INTEGER;
-    v_total_orders INTEGER;
-    cur_customers  CURSOR FOR SELECT customer_id FROM customers;
-BEGIN
-    OPEN cur_customers;
-    LOOP
-        FETCH cur_customers INTO v_customer_id;
-        EXIT WHEN NOT FOUND;
-
-        SELECT COUNT(*) INTO v_total_orders
-        FROM orders
-        WHERE customer_id = v_customer_id;
-
-        IF v_total_orders > 10 THEN
-            UPDATE customers
-            SET discount_tier = 'gold'
-            WHERE customer_id = v_customer_id;
-        END IF;
-    END LOOP;
-    CLOSE cur_customers;
-END;
-$$;
+-- BigQuery doesn't support procedural cursors in Standard SQL
+-- Multi-statement transactions would be handled via scripts:
+-- BEGIN TRANSACTION;
+-- DECLARE v_customer_id INT64;
+-- DECLARE v_total_orders INT64;
+-- -- Loop through customers (anti-pattern - use set-based UPDATE instead)
+-- FOR record IN (SELECT customer_id FROM customers) DO
+--     SET v_customer_id = record.customer_id;
+--     SET v_total_orders = (SELECT COUNT(*) FROM orders WHERE customer_id = v_customer_id);
+--     IF v_total_orders > 10 THEN
+--         UPDATE customers SET discount_tier = 'gold' WHERE customer_id = v_customer_id;
+--     END IF;
+-- END FOR;
+-- COMMIT TRANSACTION;
 
 -- Better set-based equivalent:
 -- UPDATE customers

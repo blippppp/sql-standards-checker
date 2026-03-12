@@ -3,7 +3,7 @@
 -- Purpose: Realistic mix of good and bad SQL practices in a single file.
 --          Mirrors what you would find in a typical production codebase.
 -- Issues are labelled with [ISSUE], good sections with [GOOD].
--- Database: PostgreSQL (compatible with minor modifications for MySQL/SQL Server)
+-- Database: Google BigQuery Standard SQL
 -- Scenario: E-commerce reporting and order management
 -- =============================================================================
 
@@ -14,7 +14,7 @@
 -- [GOOD] Well-structured CTE for daily sales summary
 WITH daily_sales AS (
     SELECT
-        order_date::DATE               AS sale_date,
+        CAST(order_date AS DATE)       AS sale_date,
         COUNT(DISTINCT order_id)       AS order_count,
         COUNT(DISTINCT customer_id)    AS unique_customers,
         SUM(total_amount)              AS gross_revenue,
@@ -23,8 +23,8 @@ WITH daily_sales AS (
     FROM orders
     WHERE
         status = 'completed'
-        AND order_date >= CURRENT_DATE - INTERVAL '90 days'
-    GROUP BY order_date::DATE
+        AND order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
+    GROUP BY CAST(order_date AS DATE)
 ),
 -- [GOOD] Second CTE chains cleanly onto first
 rolling_avg AS (
@@ -120,62 +120,47 @@ WHERE
 -- SECTION D: Stored procedure — mixed quality
 -- =============================================================================
 
-CREATE OR REPLACE FUNCTION process_refund(
-    p_order_id     BIGINT,
-    p_refund_amt   NUMERIC,
-    p_reason       TEXT
-)
-RETURNS VOID AS $$
-DECLARE
-    v_order_total  NUMERIC;
-    v_customer_id  BIGINT;
-BEGIN
-    -- [GOOD] Fetch needed columns only; validate existence
-    SELECT total_amount, customer_id
-    INTO   v_order_total, v_customer_id
-    FROM   orders
-    WHERE  order_id = p_order_id;
-
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Order % not found', p_order_id;
-    END IF;
-
-    -- [ISSUE] No validation that refund amount is within bounds
-    -- Should check: p_refund_amt > 0 AND p_refund_amt <= v_order_total
-
-    -- [ISSUE] Cursor used where a single UPDATE would suffice
-    DECLARE
-        cur_items CURSOR FOR
-            SELECT order_item_id, unit_price, quantity
-            FROM order_items
-            WHERE order_id = p_order_id;
-        v_item_id  BIGINT;
-        v_price    NUMERIC;
-        v_qty      INT;
-    BEGIN
-        OPEN cur_items;
-        LOOP
-            FETCH cur_items INTO v_item_id, v_price, v_qty;
-            EXIT WHEN NOT FOUND;
-            -- [ISSUE] Row-by-row update instead of set-based
-            UPDATE order_items
-            SET    refunded = TRUE
-            WHERE  order_item_id = v_item_id;
-        END LOOP;
-        CLOSE cur_items;
-    END;
-
-    -- [GOOD] Insert refund record within a transaction
-    INSERT INTO refunds (order_id, customer_id, amount, reason, created_at)
-    VALUES (p_order_id, v_customer_id, p_refund_amt, p_reason, NOW());
-
-    -- [GOOD] Update order status atomically
-    UPDATE orders
-    SET    status = 'refunded',
-           updated_at = NOW()
-    WHERE  order_id = p_order_id;
-END;
-$$ LANGUAGE plpgsql;
+-- BigQuery stored procedure (multi-statement script)
+-- CREATE OR REPLACE PROCEDURE process_refund(
+--     p_order_id     INT64,
+--     p_refund_amt   NUMERIC,
+--     p_reason       STRING
+-- )
+-- BEGIN
+--   DECLARE v_order_total NUMERIC;
+--   DECLARE v_customer_id INT64;
+--   
+--   -- [GOOD] Fetch needed columns only; validate existence
+--   SET (v_order_total, v_customer_id) = (
+--     SELECT AS STRUCT total_amount, customer_id
+--     FROM orders
+--     WHERE order_id = p_order_id
+--   );
+--
+--   IF v_order_total IS NULL THEN
+--     RAISE USING MESSAGE = FORMAT('Order %t not found', p_order_id);
+--   END IF;
+--
+--   -- [ISSUE] No validation that refund amount is within bounds
+--   -- Should check: p_refund_amt > 0 AND p_refund_amt <= v_order_total
+--
+--   -- [ISSUE] Loop used where a single UPDATE would suffice
+--   -- FOR record IN (SELECT order_item_id FROM order_items WHERE order_id = p_order_id)
+--   -- DO
+--   --   UPDATE order_items SET refunded = TRUE WHERE order_item_id = record.order_item_id;
+--   -- END FOR;
+--   -- [GOOD] Better: single set-based UPDATE
+--   UPDATE order_items SET refunded = TRUE WHERE order_id = p_order_id;
+--
+--   -- [GOOD] Insert refund record within a transaction
+--   INSERT INTO refunds (order_id, customer_id, amount, reason, created_at)
+--   VALUES (p_order_id, v_customer_id, p_refund_amt, p_reason, CURRENT_TIMESTAMP());
+--
+--   -- [GOOD] Update order status atomically
+--   UPDATE orders
+--   SET status = 'refunded', updated_at = CURRENT_TIMESTAMP()
+--   WHERE order_id = p_order_id;
+-- END;
 
 -- =============================================================================
 -- SECTION E: Analytics — nested subqueries vs CTEs
