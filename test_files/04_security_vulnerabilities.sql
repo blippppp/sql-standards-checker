@@ -196,5 +196,5 @@ VALUES ('/api/orders', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...', CURRENT
 --   return executeQuery(query);
 -- """;
 -- Attack: get_products_sorted('product_id; DROP TABLE products; --', 'ASC')
--- 
+--
 -- Correct approach: Use an allowlist in application code before constructing query
