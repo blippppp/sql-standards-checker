@@ -1,7 +1,7 @@
 -- =============================================================================
 -- File: 01_good_practices.sql
 -- Purpose: Demonstrates well-written SQL following best practices and standards.
--- Database: PostgreSQL (compatible with minor modifications for MySQL/SQL Server)
+-- Database: Google BigQuery Standard SQL
 -- Scenario: E-commerce / business application queries
 -- =============================================================================
 
@@ -32,31 +32,29 @@ ORDER BY lifetime_value DESC
 LIMIT 100;
 
 -- -----------------------------------------------------------------------------
--- Example 2: Parameterised query (shown as prepared statement)
--- Protects against SQL injection; uses $1/$2 placeholders (PostgreSQL style)
+-- Example 2: Parameterised query (BigQuery style)
+-- Protects against SQL injection; uses @parameter_name placeholders
 -- -----------------------------------------------------------------------------
-PREPARE fetch_order AS
-  SELECT
-      o.order_id,
-      o.order_date,
-      o.status,
-      o.total_amount
-  FROM orders AS o
-  WHERE o.user_id = $1
-    AND o.order_date BETWEEN $2 AND $3
-  ORDER BY o.order_date DESC;
-EXECUTE fetch_order(42, '2024-01-01', '2024-12-31');
+-- BigQuery parameterised query using named parameters
+SELECT
+    o.order_id,
+    o.order_date,
+    o.status,
+    o.total_amount
+FROM orders AS o
+WHERE o.user_id = @user_id
+  AND o.order_date BETWEEN @start_date AND @end_date
+ORDER BY o.order_date DESC;
 
--- Equivalent in application code using parameterised binding (framework-style, not psql-executable):
+-- Alternative: Positional parameters using ?
 -- SELECT
 --     o.order_id,
 --     o.order_date,
 --     o.status,
 --     o.total_amount
 -- FROM orders AS o
--- WHERE
---     o.user_id     = :user_id          -- bound parameter
---     AND o.order_date BETWEEN :start_date AND :end_date
+-- WHERE o.user_id = ?
+--   AND o.order_date BETWEEN ? AND ?
 -- ORDER BY o.order_date DESC;
 
 -- -----------------------------------------------------------------------------
@@ -80,11 +78,11 @@ ORDER BY c.last_name, c.first_name;
 -- -----------------------------------------------------------------------------
 WITH monthly_revenue AS (
     SELECT
-        DATE_TRUNC('month', order_date) AS revenue_month,
-        SUM(total_amount)               AS revenue
+        DATE_TRUNC(order_date, MONTH) AS revenue_month,
+        SUM(total_amount)             AS revenue
     FROM orders
     WHERE status = 'completed'
-    GROUP BY DATE_TRUNC('month', order_date)
+    GROUP BY DATE_TRUNC(order_date, MONTH)
 ),
 revenue_with_growth AS (
     SELECT
@@ -134,64 +132,44 @@ ORDER BY c.category_name, sales_rank;
 
 -- -----------------------------------------------------------------------------
 -- Example 6: Proper transaction with error handling
--- Transfers inventory between warehouses safely.
--- Wrapped in a PL/pgSQL DO block so EXCEPTION / ROLLBACK can be demonstrated
--- in plain psql.  In application code the same logic would live inside a
--- function or stored procedure with identical error-handling semantics.
+-- Transfers inventory between warehouses safely using MERGE for upsert.
+-- BigQuery uses multi-statement transactions with BEGIN/COMMIT/ROLLBACK.
+-- In application code, this logic would be wrapped in a transaction block.
 -- -----------------------------------------------------------------------------
-DO $$
-DECLARE
-    v_source_warehouse_id  INT  := 1;
-    v_dest_warehouse_id    INT  := 2;
-    v_product_id           INT  := 42;
-    v_transfer_qty         INT  := 10;
-    v_rows_affected        INT;
-BEGIN
-    -- Deduct from source warehouse (only if enough stock exists)
-    UPDATE warehouse_inventory
-    SET    quantity_on_hand = quantity_on_hand - v_transfer_qty
-    WHERE  warehouse_id     = v_source_warehouse_id
-      AND  product_id       = v_product_id
-      AND  quantity_on_hand >= v_transfer_qty;  -- guard against negative stock
-
-    GET DIAGNOSTICS v_rows_affected = ROW_COUNT;
-    IF v_rows_affected = 0 THEN
-        RAISE EXCEPTION
-            'Insufficient stock for product % in warehouse % (requested %)',
-            v_product_id, v_source_warehouse_id, v_transfer_qty;
-    END IF;
-
-    -- Add to destination warehouse (upsert)
-    INSERT INTO warehouse_inventory (warehouse_id, product_id, quantity_on_hand)
-    VALUES (v_dest_warehouse_id, v_product_id, v_transfer_qty)
-    ON CONFLICT (warehouse_id, product_id)
-    DO UPDATE SET
-        quantity_on_hand =
-            warehouse_inventory.quantity_on_hand + EXCLUDED.quantity_on_hand;
-
-    -- Record the transfer for audit
-    INSERT INTO inventory_transfers (
-        source_warehouse_id,
-        dest_warehouse_id,
-        product_id,
-        quantity,
-        transferred_at
-    )
-    VALUES (
-        v_source_warehouse_id,
-        v_dest_warehouse_id,
-        v_product_id,
-        v_transfer_qty,
-        NOW()
-    );
-
-EXCEPTION
-    WHEN OTHERS THEN
-        -- Transaction is automatically rolled back when an exception escapes
-        -- a DO block; re-raise so the caller sees the original error.
-        RAISE;
-END;
-$$;
+-- BEGIN TRANSACTION;
+--
+-- -- Deduct from source warehouse (only if enough stock exists)
+-- UPDATE warehouse_inventory
+-- SET quantity_on_hand = quantity_on_hand - 10
+-- WHERE warehouse_id = 1
+--   AND product_id = 42
+--   AND quantity_on_hand >= 10;  -- guard against negative stock
+--
+-- -- Check if the update succeeded (application logic would verify rows affected)
+-- -- If @@ROWCOUNT = 0, ROLLBACK and raise error
+--
+-- -- Add to destination warehouse using MERGE (upsert)
+-- MERGE INTO warehouse_inventory AS target
+-- USING (SELECT 2 AS warehouse_id, 42 AS product_id, 10 AS quantity) AS source
+-- ON target.warehouse_id = source.warehouse_id
+--   AND target.product_id = source.product_id
+-- WHEN MATCHED THEN
+--   UPDATE SET quantity_on_hand = target.quantity_on_hand + source.quantity
+-- WHEN NOT MATCHED THEN
+--   INSERT (warehouse_id, product_id, quantity_on_hand)
+--   VALUES (source.warehouse_id, source.product_id, source.quantity);
+--
+-- -- Record the transfer for audit
+-- INSERT INTO inventory_transfers (
+--     source_warehouse_id,
+--     dest_warehouse_id,
+--     product_id,
+--     quantity,
+--     transferred_at
+-- )
+-- VALUES (1, 2, 42, 10, CURRENT_TIMESTAMP());
+--
+-- COMMIT TRANSACTION;
 
 -- -----------------------------------------------------------------------------
 -- Example 7: EXISTS instead of IN for correlated lookups (more efficient)
@@ -210,7 +188,7 @@ WHERE
         INNER JOIN orders AS o ON oi.order_id = o.order_id
         WHERE
             oi.product_id = p.product_id
-            AND o.order_date >= NOW() - INTERVAL '30 days'
+            AND o.order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)
     )
 ORDER BY p.product_name;
 
@@ -224,7 +202,7 @@ SELECT
     created_at    AS event_time,
     created_by    AS actor
 FROM orders
-WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+WHERE created_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
 
 UNION ALL
 
@@ -234,27 +212,38 @@ SELECT
     processed_at  AS event_time,
     processed_by  AS actor
 FROM payments
-WHERE processed_at >= CURRENT_DATE - INTERVAL '7 days'
+WHERE processed_at >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
 
 ORDER BY event_time DESC;
 
 -- -----------------------------------------------------------------------------
--- Example 9: Proper indexing hints in table creation
--- CREATE TABLE with appropriate constraints and index suggestions
+-- Example 9: Proper table creation with constraints
+-- CREATE TABLE with appropriate constraints (BigQuery syntax)
 -- -----------------------------------------------------------------------------
 /*
 CREATE TABLE order_items (
-    order_item_id  BIGSERIAL       PRIMARY KEY,
-    order_id       BIGINT          NOT NULL REFERENCES orders(order_id),
-    product_id     BIGINT          NOT NULL REFERENCES products(product_id),
-    quantity       INTEGER         NOT NULL CHECK (quantity > 0),
-    unit_price     NUMERIC(10, 2)  NOT NULL CHECK (unit_price >= 0),
-    created_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+    order_item_id  INT64           NOT NULL,
+    order_id       INT64           NOT NULL,
+    product_id     INT64           NOT NULL,
+    quantity       INT64           NOT NULL,
+    unit_price     NUMERIC(10, 2)  NOT NULL,
+    created_at     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP()
 );
 
--- Index on the foreign key for JOIN performance
-CREATE INDEX idx_order_items_order_id   ON order_items(order_id);
-CREATE INDEX idx_order_items_product_id ON order_items(product_id);
+-- Note: BigQuery doesn't support traditional indexes or foreign keys
+-- Instead, use clustering and partitioning for query optimization
+-- Example: Partition by created_at, cluster by order_id and product_id
+
+CREATE TABLE order_items_partitioned (
+    order_item_id  INT64           NOT NULL,
+    order_id       INT64           NOT NULL,
+    product_id     INT64           NOT NULL,
+    quantity       INT64           NOT NULL,
+    unit_price     NUMERIC(10, 2)  NOT NULL,
+    created_at     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP()
+)
+PARTITION BY DATE(created_at)
+CLUSTER BY order_id, product_id;
 */
 
 -- -----------------------------------------------------------------------------
