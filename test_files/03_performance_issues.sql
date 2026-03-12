@@ -200,3 +200,65 @@ SELECT order_id, customer_id, total_amount
 FROM orders
 WHERE customer_id = @cust_id
    OR shipping_address_id = @addr_id;   -- [PERF] OR across two columns — possible full scan
+
+-- -----------------------------------------------------------------------------
+-- BigQuery-Specific Performance Issues
+-- -----------------------------------------------------------------------------
+
+-- [PERF] Performance Issue 13: Not using APPROX functions on large datasets
+SELECT
+    COUNT(DISTINCT customer_id) AS unique_customers,      -- [PERF] Exact count is expensive
+    COUNT(DISTINCT product_id) AS unique_products
+FROM order_items
+WHERE order_date >= '2020-01-01';  -- [PERF] Millions/billions of rows
+
+-- Better: Use approximate functions for acceptable accuracy with much better performance
+-- SELECT
+--     APPROX_COUNT_DISTINCT(customer_id) AS approx_customers,
+--     APPROX_COUNT_DISTINCT(product_id) AS approx_products
+-- FROM order_items
+-- WHERE order_date >= '2020-01-01';
+
+-- [PERF] Performance Issue 14: Not partitioning large tables
+-- [PERF] Creating tables without partitioning when time-based queries are common
+-- CREATE TABLE orders (  -- [PERF] Not partitioned = full scan for date ranges
+--     order_id INT64,
+--     order_date DATE,
+--     customer_id INT64,
+--     total_amount NUMERIC
+-- );
+
+-- Better: Use partitioning for time-series data
+-- CREATE TABLE orders (
+--     order_id INT64,
+--     order_date DATE,
+--     customer_id INT64,
+--     total_amount NUMERIC
+-- )
+-- PARTITION BY order_date;  -- [GOOD] Partition pruning for date filters
+
+-- [PERF] Performance Issue 15: Selecting all columns when using ARRAY_AGG
+SELECT
+    customer_id,
+    ARRAY_AGG(STRUCT(o.*)) AS all_orders  -- [PERF] Including all columns in aggregation
+FROM orders o
+GROUP BY customer_id;
+
+-- Better: Select only needed columns
+-- SELECT
+--     customer_id,
+--     ARRAY_AGG(STRUCT(order_id, order_date, total_amount)) AS orders
+-- FROM orders
+-- GROUP BY customer_id;
+
+-- [PERF] Performance Issue 16: Not using clustering on large tables
+-- [PERF] Queries frequently filter/join on certain columns without clustering
+SELECT *
+FROM large_orders  -- [PERF] Table not clustered; filtering requires more I/O
+WHERE customer_id = @customer_id
+  AND status = 'pending';
+
+-- Better: Cluster by frequently filtered columns
+-- CREATE TABLE large_orders (...)
+-- PARTITION BY DATE(order_date)
+-- CLUSTER BY customer_id, status;  -- [GOOD] Improves filter performance

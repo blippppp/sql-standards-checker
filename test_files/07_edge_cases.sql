@@ -279,3 +279,81 @@ WHERE
     AND order_date <  '2024-04-01'   -- [GOOD] range filter enables partition pruning
     AND status    = 'completed'
 ORDER BY order_date, order_id;
+
+-- -----------------------------------------------------------------------------
+-- Edge Case 11: ARRAY and STRUCT operations (BigQuery-specific)
+-- -----------------------------------------------------------------------------
+
+-- [GOOD] Working with ARRAY fields
+SELECT
+    order_id,
+    customer_id,
+    line_items,  -- ARRAY<STRUCT<product_id INT64, quantity INT64, price NUMERIC>>
+    ARRAY_LENGTH(line_items) AS item_count
+FROM orders_with_arrays
+WHERE ARRAY_LENGTH(line_items) > 0;
+
+-- [GOOD] UNNEST to flatten array into rows
+SELECT
+    o.order_id,
+    o.customer_id,
+    item.product_id,
+    item.quantity,
+    item.price
+FROM orders_with_arrays AS o,
+UNNEST(o.line_items) AS item
+WHERE item.quantity > 1;
+
+-- [GOOD] ARRAY_AGG to create arrays from grouped rows
+SELECT
+    customer_id,
+    ARRAY_AGG(order_id ORDER BY order_date DESC LIMIT 10) AS recent_order_ids,
+    ARRAY_AGG(STRUCT(order_id, order_date, total_amount) 
+              ORDER BY order_date DESC LIMIT 10) AS recent_orders
+FROM orders
+GROUP BY customer_id;
+
+-- [GOOD] Accessing nested STRUCT fields
+SELECT
+    order_id,
+    shipping_address.street,      -- dot notation for STRUCT fields
+    shipping_address.city,
+    shipping_address.postal_code
+FROM orders_with_structs
+WHERE shipping_address.country = 'US';
+
+-- -----------------------------------------------------------------------------
+-- Edge Case 12: BigQuery-specific optimizations
+-- -----------------------------------------------------------------------------
+
+-- [GOOD] Using clustering keys (DDL example)
+-- CREATE TABLE orders_clustered (
+--     order_id INT64,
+--     customer_id INT64,
+--     order_date DATE,
+--     status STRING,
+--     total_amount NUMERIC
+-- )
+-- PARTITION BY order_date
+-- CLUSTER BY customer_id, status;
+
+-- [GOOD] Materialized view for repeated aggregations
+-- CREATE MATERIALIZED VIEW daily_sales AS
+-- SELECT
+--     DATE(order_date) AS sale_date,
+--     SUM(total_amount) AS total_sales,
+--     COUNT(DISTINCT customer_id) AS unique_customers,
+--     COUNT(*) AS order_count
+-- FROM orders
+-- WHERE status = 'completed'
+-- GROUP BY DATE(order_date);
+
+-- [GOOD] Using APPROX_COUNT_DISTINCT for large-scale aggregations
+SELECT
+    DATE(order_date) AS order_day,
+    APPROX_COUNT_DISTINCT(customer_id) AS approx_customers,  -- [GOOD] faster than exact COUNT(DISTINCT)
+    COUNT(*) AS total_orders
+FROM orders
+WHERE order_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)
+GROUP BY DATE(order_date)
+ORDER BY order_day DESC;

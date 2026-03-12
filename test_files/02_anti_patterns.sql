@@ -177,3 +177,44 @@ SELECT
 FROM orders
 GROUP BY customer_id
 HAVING customer_id > 100;   -- [ISSUE] This should be a WHERE clause filter
+
+-- -----------------------------------------------------------------------------
+-- BigQuery-Specific Anti-Patterns
+-- -----------------------------------------------------------------------------
+
+-- [ISSUE] Not using partition pruning on partitioned tables
+-- Anti-Pattern 13: Query on partitioned table without filtering partition column
+SELECT
+    order_id,
+    customer_id,
+    total_amount
+FROM orders_partitioned  -- partitioned by order_date
+WHERE customer_id = 12345;  -- [ISSUE] Missing order_date filter = full table scan across all partitions
+
+-- Better: Add partition filter to enable pruning
+-- SELECT order_id, customer_id, total_amount
+-- FROM orders_partitioned
+-- WHERE customer_id = 12345
+--   AND order_date >= '2024-01-01'  -- [GOOD] Partition pruning enabled
+
+-- [ISSUE] Scanning unpartitioned column instead of using clustering
+-- Anti-Pattern 14: Query does not leverage clustering keys
+SELECT *
+FROM orders_clustered  -- clustered by customer_id
+WHERE status = 'pending'  -- [ISSUE] Not using clustered column = inefficient scan
+LIMIT 100;
+
+-- [ISSUE] Using EXACT COUNT DISTINCT on very large datasets
+-- Anti-Pattern 15: COUNT(DISTINCT ...) on billions of rows
+SELECT
+    COUNT(DISTINCT customer_id) AS unique_customers
+FROM orders
+WHERE order_date >= '2020-01-01';  -- [ISSUE] Exact distinct is expensive; use APPROX_COUNT_DISTINCT
+
+-- [ISSUE] Not materializing repeated expensive aggregations
+-- Anti-Pattern 16: Repeatedly computing the same aggregation
+SELECT
+    (SELECT SUM(total_amount) FROM orders WHERE status = 'completed') AS total_revenue,
+    (SELECT COUNT(*) FROM orders WHERE status = 'completed') AS completed_orders,
+    customer_id
+FROM customers;  -- [ISSUE] Subqueries execute for every customer row; use CTE or materialized view
