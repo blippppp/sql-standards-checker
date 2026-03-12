@@ -172,13 +172,13 @@ See [`expected_results.md`](./expected_results.md) for detailed per-file issue l
 ---
 
 ## SQL Dialect Notes
-- All files are written for **PostgreSQL 14+**.
+- All examples target **PostgreSQL 14+** semantics and syntax.
+- Some test files intentionally use framework-style named bind parameters (e.g. `:user_id`, `:product_id`) as placeholders; when running directly in `psql`, adapt these to positional PostgreSQL parameters like `$1`, `$2`, or to function arguments.
 - MySQL / SQL Server equivalents are noted in comments where syntax differs.
 - `SERIAL` → `AUTO_INCREMENT` in MySQL, `IDENTITY` in SQL Server.
 - `TIMESTAMPTZ` → `DATETIME` in MySQL / SQL Server.
 - `::` cast operator → `CAST(x AS type)` in other dialects.
 - `$1`, `$2` bind parameters → `?` in MySQL, `@p1` in SQL Server.
-
 ---
 
 ## Contributing
