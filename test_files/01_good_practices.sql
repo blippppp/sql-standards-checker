@@ -35,29 +35,29 @@ LIMIT 100;
 -- Example 2: Parameterised query (shown as prepared statement)
 -- Protects against SQL injection; uses $1/$2 placeholders (PostgreSQL style)
 -- -----------------------------------------------------------------------------
--- PREPARE fetch_order AS
---   SELECT
---       o.order_id,
---       o.order_date,
---       o.status,
---       o.total_amount
---   FROM orders AS o
---   WHERE o.user_id = $1
---     AND o.order_date BETWEEN $2 AND $3
---   ORDER BY o.order_date DESC;
--- EXECUTE fetch_order(42, '2024-01-01', '2024-12-31');
+PREPARE fetch_order AS
+  SELECT
+      o.order_id,
+      o.order_date,
+      o.status,
+      o.total_amount
+  FROM orders AS o
+  WHERE o.user_id = $1
+    AND o.order_date BETWEEN $2 AND $3
+  ORDER BY o.order_date DESC;
+EXECUTE fetch_order(42, '2024-01-01', '2024-12-31');
 
--- Equivalent in application code using parameterised binding:
-SELECT
-    o.order_id,
-    o.order_date,
-    o.status,
-    o.total_amount
-FROM orders AS o
-WHERE
-    o.user_id     = :user_id          -- bound parameter
-    AND o.order_date BETWEEN :start_date AND :end_date
-ORDER BY o.order_date DESC;
+-- Equivalent in application code using parameterised binding (framework-style, not psql-executable):
+-- SELECT
+--     o.order_id,
+--     o.order_date,
+--     o.status,
+--     o.total_amount
+-- FROM orders AS o
+-- WHERE
+--     o.user_id     = :user_id          -- bound parameter
+--     AND o.order_date BETWEEN :start_date AND :end_date
+-- ORDER BY o.order_date DESC;
 
 -- -----------------------------------------------------------------------------
 -- Example 3: Proper use of LEFT JOIN with NULL check
