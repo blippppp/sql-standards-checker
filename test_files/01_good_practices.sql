@@ -134,24 +134,40 @@ ORDER BY c.category_name, sales_rank;
 
 -- -----------------------------------------------------------------------------
 -- Example 6: Proper transaction with error handling
--- Transfers inventory between warehouses safely
+-- Transfers inventory between warehouses safely.
+-- Wrapped in a PL/pgSQL DO block so EXCEPTION / ROLLBACK can be demonstrated
+-- in plain psql.  In application code the same logic would live inside a
+-- function or stored procedure with identical error-handling semantics.
 -- -----------------------------------------------------------------------------
-BEGIN;
-
-    -- Deduct from source warehouse
+DO $$
+DECLARE
+    v_source_warehouse_id  INT  := 1;
+    v_dest_warehouse_id    INT  := 2;
+    v_product_id           INT  := 42;
+    v_transfer_qty         INT  := 10;
+    v_rows_affected        INT;
+BEGIN
+    -- Deduct from source warehouse (only if enough stock exists)
     UPDATE warehouse_inventory
-    SET quantity_on_hand = quantity_on_hand - :transfer_qty
-    WHERE
-        warehouse_id = :source_warehouse_id
-        AND product_id  = :product_id
-        AND quantity_on_hand >= :transfer_qty;  -- guard against negative stock
+    SET    quantity_on_hand = quantity_on_hand - v_transfer_qty
+    WHERE  warehouse_id     = v_source_warehouse_id
+      AND  product_id       = v_product_id
+      AND  quantity_on_hand >= v_transfer_qty;  -- guard against negative stock
 
-    -- Add to destination warehouse
+    GET DIAGNOSTICS v_rows_affected = ROW_COUNT;
+    IF v_rows_affected = 0 THEN
+        RAISE EXCEPTION
+            'Insufficient stock for product % in warehouse % (requested %)',
+            v_product_id, v_source_warehouse_id, v_transfer_qty;
+    END IF;
+
+    -- Add to destination warehouse (upsert)
     INSERT INTO warehouse_inventory (warehouse_id, product_id, quantity_on_hand)
-    VALUES (:dest_warehouse_id, :product_id, :transfer_qty)
+    VALUES (v_dest_warehouse_id, v_product_id, v_transfer_qty)
     ON CONFLICT (warehouse_id, product_id)
     DO UPDATE SET
-        quantity_on_hand = warehouse_inventory.quantity_on_hand + EXCLUDED.quantity_on_hand;
+        quantity_on_hand =
+            warehouse_inventory.quantity_on_hand + EXCLUDED.quantity_on_hand;
 
     -- Record the transfer for audit
     INSERT INTO inventory_transfers (
@@ -162,14 +178,20 @@ BEGIN;
         transferred_at
     )
     VALUES (
-        :source_warehouse_id,
-        :dest_warehouse_id,
-        :product_id,
-        :transfer_qty,
+        v_source_warehouse_id,
+        v_dest_warehouse_id,
+        v_product_id,
+        v_transfer_qty,
         NOW()
     );
 
-COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        -- Transaction is automatically rolled back when an exception escapes
+        -- a DO block; re-raise so the caller sees the original error.
+        RAISE;
+END;
+$$;
 
 -- -----------------------------------------------------------------------------
 -- Example 7: EXISTS instead of IN for correlated lookups (more efficient)
