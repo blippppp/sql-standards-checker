@@ -144,7 +144,7 @@ LIMIT 100;
 -- [ISSUE] JSON extraction in WHERE without a supporting index
 SELECT order_id
 FROM orders
-WHERE JSON_EXTRACT_SCALAR(metadata, '$.promo_code') = 'SAVE20';   -- [ISSUE] extraction likely not indexed
+WHERE JSON_EXTRACT_SCALAR(metadata, '$.promo_code') = 'SAVE20';   -- [ISSUE] extraction not optimized; consider SEARCH index
 
 -- [EDGE] Aggregating a nested JSON array
 SELECT

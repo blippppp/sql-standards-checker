@@ -109,7 +109,7 @@ WHERE status = 'pending'
 -- -----------------------------------------------------------------------------
 -- [ISSUE] Cursor to update discount per customer — should be a single UPDATE
 -- BigQuery doesn't support procedural cursors in Standard SQL
--- Multi-statement transactions would be handled via scripts:
+-- Multi-statement script example (anti-pattern - use set-based UPDATE instead):
 -- BEGIN TRANSACTION;
 -- DECLARE v_customer_id INT64;
 -- DECLARE v_total_orders INT64;

@@ -142,7 +142,7 @@ JOIN payment_methods p ON c.customer_id = p.customer_id;
 CREATE TABLE orders_unsafe (
     order_id     INT64,
     customer_id  INT64,           -- [SEC] no NOT NULL, no FK constraint
-    total_amount NUMERIC,         -- [SEC] no CHECK (total_amount >= 0) - BigQuery doesn't support CHECK
+    total_amount NUMERIC,         -- [SEC] no CHECK (total_amount >= 0) - BigQuery doesn't support CHECK; validate in application
     status       STRING(50),      -- [SEC] no constraint — any string accepted
     discount_pct NUMERIC          -- [SEC] could accept 999 (999% discount!)
 );
