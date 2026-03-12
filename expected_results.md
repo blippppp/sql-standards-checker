@@ -2,6 +2,8 @@
 
 This document describes what the SQL Standards Checker should identify in each test file, along with suggested improvements, severity ratings, and expected issue counts per category.
 
+**Note**: All test files use **Google BigQuery Standard SQL** syntax and idioms.
+
 **Severity scale**
 - 🔴 **Critical** — data loss, security breach, or production outage risk
 - 🟠 **High** — significant performance or correctness problem
