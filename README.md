@@ -123,14 +123,14 @@ A realistic file mirroring production code quality. Contains both good and bad s
 ### `07_edge_cases.sql` — Advanced Scenarios
 Ten advanced edge cases:
 - Recursive CTE with and without infinite-loop guard
-- `INSERT ... ON CONFLICT` (PostgreSQL UPSERT)
-- Dynamic SQL with `format()` + `%I` (safe) vs. concatenation (unsafe)
+- `MERGE` statements for upsert operations
+- Dynamic SQL with parameterization (safe) vs. concatenation (unsafe)
 - Temporary tables with proper lifecycle management
-- JSONB querying with GIN-index operators vs. unindexed extraction
-- Full-text search with `tsvector`/`tsquery` vs. `ILIKE` fallback
-- Cross-schema queries
+- JSON querying with native JSON functions vs. string operations
+- ARRAY and STRUCT operations with UNNEST
+- Cross-dataset queries (project.dataset.table)
 - Long multi-join query with many GROUP BY columns
-- `LATERAL` join for top-N per group
+- Window functions for top-N per group
 - Partitioned table with partition-pruning filters
 
 ---
@@ -172,13 +172,20 @@ See [`expected_results.md`](./expected_results.md) for detailed per-file issue l
 ---
 
 ## SQL Dialect Notes
-- All examples target **PostgreSQL 14+** semantics and syntax.
-- Some test files intentionally use framework-style named bind parameters (e.g. `:user_id`, `:product_id`) as placeholders; when running directly in `psql`, adapt these to positional PostgreSQL parameters like `$1`, `$2`, or to function arguments.
-- MySQL / SQL Server equivalents are noted in comments where syntax differs.
-- `SERIAL` → `AUTO_INCREMENT` in MySQL, `IDENTITY` in SQL Server.
-- `TIMESTAMPTZ` → `DATETIME` in MySQL / SQL Server.
-- `::` cast operator → `CAST(x AS type)` in other dialects.
-- `$1`, `$2` bind parameters → `?` in MySQL, `@p1` in SQL Server.
+- All examples target **Google BigQuery Standard SQL** semantics and syntax.
+- Uses BigQuery-native data types and functions.
+- Parameterised queries use `@parameter_name` or `?` syntax (BigQuery parameter markers).
+- All queries use Standard SQL (not Legacy SQL).
+- BigQuery-specific features:
+  - `INT64`, `FLOAT64`, `STRING`, `BYTES`, `TIMESTAMP`, `DATE`, `TIME`, `DATETIME` data types
+  - `CAST(x AS type)` for type conversion (Standard SQL)
+  - `ARRAY` and `STRUCT` types for complex data structures
+  - `UNNEST()` for array operations
+  - `project.dataset.table` naming convention (three-part identifiers)
+  - `MERGE` statements for upsert operations
+  - `GENERATE_UUID()` for unique identifiers
+  - Partitioning and clustering for optimization
+  - Window functions with BigQuery-specific frames
 ---
 
 ## Contributing
